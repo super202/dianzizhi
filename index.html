@@ -5,29 +5,11 @@
   <title>电子纸控制器</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body {
-      font-family: sans-serif;
-      margin: 20px;
-    }
-    .section {
-      margin-bottom: 30px;
-    }
-    textarea {
-      width: 100%;
-      height: 150px;
-      font-size: 16px;
-      margin-bottom: 10px;
-    }
-    button {
-      font-size: 16px;
-      padding: 6px 12px;
-      margin-right: 8px;
-      cursor: pointer;
-    }
-    canvas {
-      display: block;
-      border: 1px solid #ccc;
-    }
+    body { font-family: sans-serif; margin: 20px; }
+    .section { margin-bottom: 30px; }
+    textarea { width: 100%; height: 150px; font-size: 16px; margin-bottom: 10px; }
+    button { font-size: 16px; padding: 6px 12px; margin-right: 8px; cursor: pointer; }
+    canvas { display: block; border: 1px solid #ccc; }
     #log {
       background: #eee;
       padding: 10px;
@@ -37,24 +19,11 @@
       border: 1px solid #aaa;
       font-size: 14px;
     }
-    .status-bar {
-      font-size: 14px;
-      color: #444;
-      margin-top: 10px;
-    }
-    label {
-      margin-right: 5px;
-    }
-    .flex-row {
-      display: flex;
-      gap: 20px;
-      align-items: flex-start;
-      flex-wrap: wrap;
-    }
-    .flex-grow {
-      flex: 1;
-      min-width: 250px;
-    }
+    .status-bar { font-size: 14px; color: #444; margin-top: 10px; }
+    label { margin-right: 5px; }
+    .flex-row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+    .flex-grow { flex: 1; min-width: 250px; }
+    .style-controls { margin-top: 10px; }
   </style>
 </head>
 
@@ -65,6 +34,16 @@
     <fieldset class="flex-grow">
       <legend>📋 输入待办事项</legend>
       <textarea id="todoInput" placeholder="每行一个事项，如：\n开会 9 点\n提交日报"></textarea>
+
+      <div class="style-controls">
+        <label>标题大小 <input type="number" id="titleSize" value="38" /></label>
+        <label>日期大小 <input type="number" id="dateSize" value="18" /></label>
+        <label>列表大小 <input type="number" id="fontSize" value="20" /></label>
+        <label>行间距 <input type="number" id="lineHeight" value="26" /></label>
+        <label>字体颜色 <input type="color" id="fontColor" value="#000000" /></label>
+        <label>底部大小 <input type="number" id="footerSize" value="18" /></label>
+      </div>
+
       <button onclick="generateAndSend()">🖼 一键生成并发送</button>
     </fieldset>
     <canvas id="canvas" width="400" height="300"></canvas>
@@ -98,13 +77,13 @@
       </select>
 
       <label for="threshold">阈值</label>
-      <input type="number" id="threshold" value="125" min="0" max="255" />
+      <input type="number" id="threshold" value="125" />
 
       <label for="mtusize">MTU</label>
-      <input type="number" id="mtusize" value="20" min="1" max="255" />
+      <input type="number" id="mtusize" value="20" />
 
       <label for="interleavedcount">确认间隔</label>
-      <input type="number" id="interleavedcount" value="50" min="0" max="500" />
+      <input type="number" id="interleavedcount" value="50" />
 
       <br /><br />
       <button onclick="clear_canvas()">清除画布</button>
@@ -124,17 +103,26 @@
   </div>
 
   <img id="demo-img" style="display: none" src="" />
+  
+  <div>
+      <div>
+          一键生成默认参数为【取模算法：三色 Atkinson----4.2寸三色屏    （我就是个写前端的其他不太懂）】
+      </div>
+      最近有点忙，源码后面整理一下挂上来
+      <a href="https://tsl0922.github.io/EPD-nRF5/" target="_blank">感谢大佬开源</a>
+      
+  </div>
 
   <script src="js/dithering.js?v=20250511"></script>
   <script src="js/main.js?v=20250511"></script>
 
   <script>
-    let yiText = "宜：结婚 订婚 祈福 祭祀 求嗣 签约 装修 修造 种植";
-    let jiText = "忌：搬家 出行 开市 开仓";
+    let yiText = "宜：接口出错，无数据";
+    let jiText = "忌：接口出错，无数据";
 
     async function fetchAlmanac() {
       try {
-        const res = await fetch("https://lkapi.super202.com/rili/hl.php");
+        const res = await fetch("/hl.php");
         const json = await res.json();
         if (json.success && json.data) {
           yiText = "宜：" + json.data.yi;
@@ -146,21 +134,24 @@
     }
 
     async function generateAndSend() {
-      const ditheringSelect = document.getElementById("dithering");
-      if (ditheringSelect) ditheringSelect.value = "bwr_Atkinson";
-
+      document.getElementById("dithering").value = "bwr_Atkinson";
       await fetchAlmanac();
       generateTodoImage();
-      setTimeout(() => {
-        sendimg();
-      }, 100);
+      setTimeout(() => sendimg(), 100);
     }
 
     function generateTodoImage() {
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       const input = document.getElementById("todoInput").value;
-      const lines = input.split("\n").filter((l) => l.trim() !== "");
+      const lines = input.split("\n").filter(l => l.trim() !== "");
+
+      const fontSize = parseInt(document.getElementById("fontSize").value) || 20;
+      const lineHeight = parseInt(document.getElementById("lineHeight").value) || 26;
+      const fontColor = document.getElementById("fontColor").value || "#000000";
+      const titleSize = parseInt(document.getElementById("titleSize").value) || 38;
+      const dateSize = parseInt(document.getElementById("dateSize").value) || 18;
+      const footerSize = parseInt(document.getElementById("footerSize").value) || 18;
 
       ctx.fillStyle = "white";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -169,47 +160,43 @@
       ctx.fillStyle = "red";
       ctx.fillRect(0, 0, canvas.width, 50);
 
-      // 主标题：待办事项（居中）
+      // 主标题：字间距加大 + 上部留空
       const title = "待办事项";
       ctx.fillStyle = "white";
-      ctx.font = "bold 32px sans-serif";
+      ctx.font = `bold ${titleSize}px sans-serif`;
       ctx.textAlign = "left";
-      const charSpacing = 10;
+      const spacing = 14;
       const charWidth = ctx.measureText("待").width;
-      const totalWidth = title.length * charWidth + (title.length - 1) * charSpacing;
+      const totalWidth = title.length * charWidth + (title.length - 1) * spacing;
       const startX = (canvas.width - totalWidth) / 2;
-      const baseY = 30;
+      const titleY = 35; // 向下移一点
       for (let i = 0; i < title.length; i++) {
-        ctx.fillText(title[i], startX + i * (charWidth + charSpacing), baseY);
+        ctx.fillText(title[i], startX + i * (charWidth + spacing), titleY);
       }
 
-      // 日期与星期 - 标题下方
+      // 日期 & 星期
       const now = new Date();
       const month = now.getMonth() + 1;
       const day = now.getDate();
-      const weekDays = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
-      const week = weekDays[now.getDay()];
+      const week = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"][now.getDay()];
 
-      ctx.font = "bold 16px sans-serif";
+      ctx.font = `bold ${dateSize}px sans-serif`;
       ctx.textAlign = "left";
       ctx.fillText(`${month}月${day}日`, 10, 48);
       ctx.textAlign = "right";
       ctx.fillText(week, canvas.width - 10, 48);
 
-      // 单列待办事项
+      // 列表
       const startY = 80;
-      const lineHeight = 34;
-      ctx.font = "bold 20px sans-serif";
+      ctx.font = `bold ${fontSize}px sans-serif`;
       ctx.textAlign = "left";
 
       lines.slice(0, 6).forEach((item, i) => {
         const x = 10;
         const y = startY + i * lineHeight;
-
         const label = `${i + 1}. ${item}`;
-        ctx.fillStyle = "black";
+        ctx.fillStyle = fontColor;
         ctx.fillText(label, x, y);
-
         const textWidth = ctx.measureText(label).width;
         ctx.strokeStyle = "red";
         ctx.lineWidth = 1;
@@ -219,21 +206,18 @@
         ctx.stroke();
       });
 
-      // 分割线
+      // 底部分割线
       const dividerY = canvas.height - 46;
       ctx.strokeStyle = "red";
-      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(0, dividerY);
       ctx.lineTo(canvas.width, dividerY);
       ctx.stroke();
 
-      // 黑色底部背景
+      // 黑底 + 黄历
       ctx.fillStyle = "black";
       ctx.fillRect(0, canvas.height - 45, canvas.width, 45);
-
-      // 黄历内容
-      ctx.font = "bold 14px sans-serif";
+      ctx.font = `bold ${footerSize}px sans-serif`;
       ctx.textAlign = "left";
       ctx.fillStyle = "white";
       ctx.fillText(`【${yiText}】`, 10, canvas.height - 26);
