@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>电子纸控制器</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+    }
+    .section {
+      margin-bottom: 30px;
+    }
+    textarea {
+      width: 100%;
+      height: 150px;
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+    button {
+      font-size: 16px;
+      padding: 6px 12px;
+      margin-right: 8px;
+      cursor: pointer;
+    }
+    canvas {
+      display: block;
+      border: 1px solid #ccc;
+    }
+    #log {
+      background: #eee;
+      padding: 10px;
+      height: 160px;
+      overflow-y: auto;
+      font-family: monospace;
+      border: 1px solid #aaa;
+      font-size: 14px;
+    }
+    .status-bar {
+      font-size: 14px;
+      color: #444;
+      margin-top: 10px;
+    }
+    label {
+      margin-right: 5px;
+    }
+    .flex-row {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .flex-grow {
+      flex: 1;
+      min-width: 250px;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>4.2 寸电子墨水屏蓝牙控制器</h2>
+
+  <div class="section flex-row">
+    <fieldset class="flex-grow">
+      <legend>📋 输入待办事项</legend>
+      <textarea id="todoInput" placeholder="每行一个事项，如：\n开会 9 点\n提交日报"></textarea>
+      <button onclick="generateAndSend()">🖼 一键生成并发送</button>
+    </fieldset>
+    <canvas id="canvas" width="400" height="300"></canvas>
+  </div>
+
+  <div class="section">
+    <fieldset>
+      <legend>蓝牙连接</legend>
+      <button id="connectbutton" onclick="preConnect()">连接</button>
+      <button id="reconnectbutton" onclick="reConnect()">重连</button>
+      <button onclick="clearLog()">清空日志</button>
+      <button onclick="syncTime(1)">日历模式</button>
+      <button onclick="syncTime(2)">时钟模式</button>
+      <button onclick="clearScreen()">清除屏幕</button>
+      <div id="log"></div>
+    </fieldset>
+  </div>
+
+  <div class="section">
+    <fieldset>
+      <legend>蓝牙传图</legend>
+      <label for="image_file">选择文件</label>
+      <input type="file" id="image_file" onchange="update_image()" accept=".png,.jpg,.bmp,.webp,.jpeg" />
+
+      <label for="dithering">取模算法</label>
+      <select id="dithering" onchange="update_image()">
+        <option value="bwr_floydsteinberg">三色 Floyd</option>
+        <option value="bwr_Atkinson" selected>三色 Atkinson</option>
+        <option value="floydsteinberg">黑白 Floyd</option>
+        <option value="none">黑白 二值化</option>
+      </select>
+
+      <label for="threshold">阈值</label>
+      <input type="number" id="threshold" value="125" min="0" max="255" />
+
+      <label for="mtusize">MTU</label>
+      <input type="number" id="mtusize" value="20" min="1" max="255" />
+
+      <label for="interleavedcount">确认间隔</label>
+      <input type="number" id="interleavedcount" value="50" min="0" max="500" />
+
+      <br /><br />
+      <button onclick="clear_canvas()">清除画布</button>
+      <button id="sendimgbutton" onclick="sendimg()">发送图片</button>
+      <div class="status-bar">状态：<span id="status"></span></div>
+    </fieldset>
+  </div>
+
+  <div style="display: none;">
+    <input type="text" id="epdpins" value="" />
+    <select id="epddriver"><option value="01" selected></option></select>
+    <button id="sendcmdbutton"></button>
+    <button id="calendarmodebutton"></button>
+    <button id="clockmodebutton"></button>
+    <button id="clearscreenbutton"></button>
+    <button id="setDriverbutton"></button>
+  </div>
+
+  <img id="demo-img" style="display: none" src="" />
+
+  <script src="js/dithering.js?v=20250511"></script>
+  <script src="js/main.js?v=20250511"></script>
+
+  <script>
+    let yiText = "宜：结婚 订婚 祈福 祭祀 求嗣 签约 装修 修造 种植";
+    let jiText = "忌：搬家 出行 开市 开仓";
+
+    async function fetchAlmanac() {
+      try {
+        const res = await fetch("https://lkapi.super202.com/rili/hl.php");
+        const json = await res.json();
+        if (json.success && json.data) {
+          yiText = "宜：" + json.data.yi;
+          jiText = "忌：" + json.data.ji;
+        }
+      } catch (e) {
+        console.warn("黄历接口请求失败，使用默认数据", e);
+      }
+    }
+
+    async function generateAndSend() {
+      const ditheringSelect = document.getElementById("dithering");
+      if (ditheringSelect) ditheringSelect.value = "bwr_Atkinson";
+
+      await fetchAlmanac();
+      generateTodoImage();
+      setTimeout(() => {
+        sendimg();
+      }, 100);
+    }
+
+    function generateTodoImage() {
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const input = document.getElementById("todoInput").value;
+      const lines = input.split("\n").filter((l) => l.trim() !== "");
+
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 红色标题栏背景
+      ctx.fillStyle = "red";
+      ctx.fillRect(0, 0, canvas.width, 50);
+
+      // 主标题：待办事项（居中）
+      const title = "待办事项";
+      ctx.fillStyle = "white";
+      ctx.font = "bold 32px sans-serif";
+      ctx.textAlign = "left";
+      const charSpacing = 10;
+      const charWidth = ctx.measureText("待").width;
+      const totalWidth = title.length * charWidth + (title.length - 1) * charSpacing;
+      const startX = (canvas.width - totalWidth) / 2;
+      const baseY = 30;
+      for (let i = 0; i < title.length; i++) {
+        ctx.fillText(title[i], startX + i * (charWidth + charSpacing), baseY);
+      }
+
+      // 日期与星期 - 标题下方
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const day = now.getDate();
+      const weekDays = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+      const week = weekDays[now.getDay()];
+
+      ctx.font = "bold 16px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(`${month}月${day}日`, 10, 48);
+      ctx.textAlign = "right";
+      ctx.fillText(week, canvas.width - 10, 48);
+
+      // 单列待办事项
+      const startY = 80;
+      const lineHeight = 34;
+      ctx.font = "bold 20px sans-serif";
+      ctx.textAlign = "left";
+
+      lines.slice(0, 6).forEach((item, i) => {
+        const x = 10;
+        const y = startY + i * lineHeight;
+
+        const label = `${i + 1}. ${item}`;
+        ctx.fillStyle = "black";
+        ctx.fillText(label, x, y);
+
+        const textWidth = ctx.measureText(label).width;
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y + 5);
+        ctx.lineTo(x + textWidth, y + 5);
+        ctx.stroke();
+      });
+
+      // 分割线
+      const dividerY = canvas.height - 46;
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, dividerY);
+      ctx.lineTo(canvas.width, dividerY);
+      ctx.stroke();
+
+      // 黑色底部背景
+      ctx.fillStyle = "black";
+      ctx.fillRect(0, canvas.height - 45, canvas.width, 45);
+
+      // 黄历内容
+      ctx.font = "bold 14px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillStyle = "white";
+      ctx.fillText(`【${yiText}】`, 10, canvas.height - 26);
+      ctx.fillStyle = "red";
+      ctx.fillText(`【${jiText}】`, 10, canvas.height - 8);
+
+      convert_dithering();
+    }
+  </script>
+</body>
+</html>
